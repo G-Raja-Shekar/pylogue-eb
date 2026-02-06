@@ -45,8 +45,8 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def google_oauth_config_from_env() -> GoogleOAuthConfig | None:
-    client_id = os.getenv("PYLOGUE_GOOGLE_CLIENT_ID") or os.getenv("PYLOGUE_CLIENT_ID")
-    client_secret = os.getenv("PYLOGUE_GOOGLE_CLIENT_SECRET") or os.getenv("PYLOGUE_CLIENT_SECRET")
+    client_id = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("PYLOGUE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET") or os.getenv("PYLOGUE_CLIENT_SECRET")
     if not (client_id and client_secret):
         return None
     return GoogleOAuthConfig(
