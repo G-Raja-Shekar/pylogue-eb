@@ -13,10 +13,13 @@ import logfire
 from pylogue.integrations.pydantic_ai import PydanticAIResponder
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 dotenv.load_dotenv()
 from simple_salesforce import Salesforce
 
+# Salesforce Configuration
 # Salesforce Configuration
 config = dict(
     username=os.environ['SALESFORCE_USERNAME'],
@@ -24,6 +27,40 @@ config = dict(
     security_token=os.environ['SALESFORCE_SECURITY_TOKEN'],
 )
 sf = Salesforce(**config)
+
+# PostgreSQL Configuration
+db_config = dict(
+    host=os.environ.get('DB_HOST', 'localhost'),
+    port=os.environ.get('DB_PORT', '5432'),
+    database=os.environ['DB_NAME'],
+    user=os.environ['DB_USER'],
+    password=os.environ['DB_PASSWORD'],
+)
+
+# Insurance Database Configuration
+insurance_db_config = dict(
+    host=os.environ.get('INSURANCE_DB_HOST', 'localhost'),
+    port=os.environ.get('INSURANCE_DB_PORT', '5432'),
+    database=os.environ['INSURANCE_DB_NAME'],
+    user=os.environ['INSURANCE_DB_USER'],
+    password=os.environ['INSURANCE_DB_PASSWORD'],
+)
+
+def get_db_connection():
+    """Create a PostgreSQL database connection"""
+    with logfire.span('get_db_connection', database=db_config['database'], host=db_config['host']):
+        logfire.info('Connecting to main database', database=db_config['database'])
+        conn = psycopg2.connect(**db_config)
+        logfire.info('Main database connection established')
+        return conn
+
+def get_insurance_db_connection():
+    """Create an Insurance database connection"""
+    with logfire.span('get_insurance_db_connection', database=insurance_db_config['database'], host=insurance_db_config['host']):
+        logfire.info('Connecting to insurance database', database=insurance_db_config['database'])
+        conn = psycopg2.connect(**insurance_db_config)
+        logfire.info('Insurance database connection established')
+        return conn
 
 # PostgreSQL Configuration
 db_config = dict(
@@ -91,7 +128,33 @@ logfire.configure(
     service_name='salesforce-agent',
     environment='dev',
 )
+def load_database_schema():
+    """Load database schema from eb-db-schema.sql file"""
+    schema_file = Path(__file__).resolve().parent / 'eb-db-schema.sql'
+    try:
+        with open(schema_file, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Database schema file not found."
+
+def load_insurance_database_schema():
+    """Load insurance database schema from insurance-db-schema.sql file"""
+    schema_file = Path(__file__).resolve().parent / 'insurance-db-schema.sql'
+    try:
+        with open(schema_file, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Insurance database schema file not found."
+
+# Configure Logfire with write token
+logfire.configure(
+    token=os.environ.get('EB_LOGFIRE_WRITE_TOKEN'),
+    service_name='salesforce-agent',
+    environment='dev',
+)
 logfire.instrument_pydantic_ai()
+logfire.instrument_psycopg()
+logfire.info('Application started', service='salesforce-agent')
 logfire.instrument_psycopg()
 logfire.info('Application started', service='salesforce-agent')
 
@@ -101,7 +164,8 @@ System Instruction for Salesforce & Database Query Assistant:
 You are a multi-source data assistant with access to Salesforce, PostgreSQL database, and Insurance database.
 
 === SALESFORCE TOOLS ===
-get_table_schema(table_name) - Returns schema details for a Salesforce table
+get_available_salesforce_tables() - Returns list of all available Salesforce tables
+get_table_schema(table_name) - Returns schema details for a specific Salesforce table
 run_salesforce_query(soql_query) - Executes a SOQL query and returns records
 render_altair_chart_py(soql_query, altair_python) - Renders charts from Salesforce data
 
@@ -111,9 +175,8 @@ SOQL Syntax:
 - String values need single quotes
 - No JOIN keyword - use relationship queries
 
-Available Salesforce Tables: {get_salesforce_tables()}
-
 === MAIN DATABASE TOOLS ===
+get_main_database_schema() - Returns the main database schema with table and column information
 run_database_query(sql_query) - Executes a SQL query and returns records
 render_db_chart_py(sql_query, altair_python) - Renders charts from database data
 
@@ -122,10 +185,8 @@ SQL Syntax:
 - Use JOINs for related tables
 - String values need single quotes
 
-=== MAIN DATABASE SCHEMA ===
-{load_database_schema()}
-
 === INSURANCE DATABASE TOOLS ===
+get_insurance_database_schema() - Returns the insurance database schema with table and column information
 run_insurance_db_query(sql_query) - Executes a SQL query on insurance database and returns records
 render_insurance_db_chart_py(sql_query, altair_python) - Renders charts from insurance database data
 
@@ -134,21 +195,20 @@ SQL Syntax:
 - Use JOINs for related tables
 - String values need single quotes
 
-=== INSURANCE DATABASE SCHEMA ===
-{load_insurance_database_schema()}
-
 === YOUR TASK ===
 Answer user questions by intelligently determining whether to query Salesforce, main database, or insurance database (or combination).
 
 Approach:
 1. Analyze the user's question to determine data source(s)
-2. Refer to the database schemas above for table and column names
-3. Construct and execute appropriate queries
+2. Call the appropriate schema/table listing tools when you need to know what tables or columns are available
+3. Construct and execute appropriate queries based on the schema information
 4. Present results clearly
 
 Rules:
-- NEVER connect to database to retrieve schema information - use the provided schemas above
-- Refer directly to the schema files provided in the instructions
+- Call get_available_salesforce_tables() when you need to know available Salesforce tables
+- Call get_main_database_schema() when you need main database schema information
+- Call get_insurance_database_schema() when you need insurance database schema information
+- Only call schema tools when necessary for answering the question
 - Default to text-based answers
 - Only create visualizations when explicitly requested
 - Do not give technical explanations unless asked
@@ -158,6 +218,8 @@ Rules:
 agent = Agent(
     # "openai:gpt-5-mini",
     "google-gla:gemini-2.5-flash",
+    # "openai:gpt-5-mini",
+    "google-gla:gemini-2.5-flash",
     instructions=instructions,
 )
 deps = None
@@ -165,8 +227,51 @@ deps = None
 DATA_DIR = Path(__file__).resolve().parent
 
 @agent.tool_plain()
+def get_available_salesforce_tables(purpose: str):
+    "Get list of all queryable Salesforce tables"
+    with logfire.span('get_available_salesforce_tables', purpose=purpose):
+        logfire.info('Fetching Salesforce tables list', purpose=purpose)
+        tables = get_salesforce_tables()
+        logfire.info('Salesforce tables retrieved', count=len(tables), purpose=purpose)
+        return tables
+
+@agent.tool_plain()
+def get_main_database_schema(purpose: str):
+    """Get the main database schema with table and column information"""
+    with logfire.span('get_main_database_schema', purpose=purpose):
+        logfire.info('Fetching main database schema', purpose=purpose)
+        schema = load_database_schema()
+        logfire.info('Main database schema retrieved', purpose=purpose)
+        return schema
+
+@agent.tool_plain()
+def get_insurance_database_schema(purpose: str):
+    """Get the insurance database schema with table and column information"""
+    with logfire.span('get_insurance_database_schema', purpose=purpose):
+        logfire.info('Fetching insurance database schema', purpose=purpose)
+        schema = load_insurance_database_schema()
+        logfire.info('Insurance database schema retrieved', purpose=purpose)
+        return schema
+
+@agent.tool_plain()
 def get_table_schema(table_name: str, purpose: str):
     "Get schema details for a specific Salesforce table"
+    with logfire.span('get_table_schema', table_name=table_name, purpose=purpose):
+        try:
+            logfire.info('Fetching Salesforce table schema', table=table_name, purpose=purpose)
+            table = getattr(sf, table_name)
+            fields = table.describe()['fields']
+            schema = []
+            for f in fields:
+                field_info = dict(name=f['name'], type=f['type'], label=f['label'])
+                if f['type'] == 'picklist': field_info['values'] = [v['value'] for v in f['picklistValues']]
+                if f['type'] == 'reference': field_info['references'] = f['referenceTo']
+                schema.append(field_info)
+            logfire.info('Schema retrieved successfully', table=table_name, field_count=len(schema))
+            return schema
+        except Exception as e:
+            logfire.error('Error retrieving schema', table=table_name, error=str(e))
+            return f"Error retrieving schema for table {table_name}: {e}"
     with logfire.span('get_table_schema', table_name=table_name, purpose=purpose):
         try:
             logfire.info('Fetching Salesforce table schema', table=table_name, purpose=purpose)
@@ -250,6 +355,58 @@ def run_insurance_db_query(sql_query: str, purpose: str):
             logfire.error('SQL query execution failed', query=sql_query, error=str(e), database='insurance')
             return f"Error executing insurance database SQL query: {e}"
 
+@agent.tool_plain()
+def run_database_query(sql_query: str, purpose: str):
+    """Execute a PostgreSQL SQL query and return results"""
+    with logfire.span('run_database_query', query=sql_query, purpose=purpose, database='main'):
+        try:
+            logfire.info('Executing SQL query on main database', query=sql_query, purpose=purpose)
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(sql_query)
+            
+            # Check if it's a SELECT query
+            if cursor.description:
+                results = cursor.fetchall()
+                results = [dict(row) for row in results]
+                logfire.info('SQL query executed successfully', row_count=len(results), purpose=purpose)
+            else:
+                results = {"message": "Query executed successfully", "rowcount": cursor.rowcount}
+                logfire.info('SQL command executed', rows_affected=cursor.rowcount, purpose=purpose)
+            
+            cursor.close()
+            conn.close()
+            return results
+        except Exception as e:
+            logfire.error('SQL query execution failed', query=sql_query, error=str(e), database='main')
+            return f"Error executing SQL query: {e}"
+
+@agent.tool_plain()
+def run_insurance_db_query(sql_query: str, purpose: str):
+    """Execute a SQL query on Insurance database and return results"""
+    with logfire.span('run_insurance_db_query', query=sql_query, purpose=purpose, database='insurance'):
+        try:
+            logfire.info('Executing SQL query on insurance database', query=sql_query, purpose=purpose)
+            conn = get_insurance_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(sql_query)
+            
+            # Check if it's a SELECT query
+            if cursor.description:
+                results = cursor.fetchall()
+                results = [dict(row) for row in results]
+                logfire.info('SQL query executed successfully', row_count=len(results), purpose=purpose)
+            else:
+                results = {"message": "Query executed successfully", "rowcount": cursor.rowcount}
+                logfire.info('SQL command executed', rows_affected=cursor.rowcount, purpose=purpose)
+            
+            cursor.close()
+            conn.close()
+            return results
+        except Exception as e:
+            logfire.error('SQL query execution failed', query=sql_query, error=str(e), database='insurance')
+            return f"Error executing insurance database SQL query: {e}"
+
 def _flatten_record(record: dict, prefix: str = "") -> dict:
     flat = {}
     for key, value in record.items():
@@ -272,6 +429,13 @@ def render_altair_chart_py(soql_query: str, altair_python: str, purpose: str):
     The code runs with access to: results (raw Salesforce records),
     df (pandas DataFrame), alt (Altair), pd (pandas).
     """
+    with logfire.span('render_altair_chart_py', query=soql_query, purpose=purpose, data_source='salesforce'):
+        try:
+            logfire.info('Rendering Salesforce chart', purpose=purpose)
+            results = run_salesforce_query(soql_query, purpose="Fetch Salesforce data for the chart.")
+            flattened = [_flatten_record(r) for r in results]
+            df = pd.DataFrame(flattened)
+            logfire.debug('Data prepared for chart', rows=len(df), columns=len(df.columns))
     with logfire.span('render_altair_chart_py', query=soql_query, purpose=purpose, data_source='salesforce'):
         try:
             logfire.info('Rendering Salesforce chart', purpose=purpose)

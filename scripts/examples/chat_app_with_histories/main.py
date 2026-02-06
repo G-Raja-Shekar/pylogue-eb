@@ -1,12 +1,16 @@
-from .factory import app_factory
-# from ...agents.ipl.main import agent as ipl_agent
-from ...agents.salesforce.main import agent as salesforce_agent
+from pylogue.shell import app_factory
+# from ...agents.ipl.main import agent
+# from ...agents.salesforce.main import agent
+from ...agents.haiku import agent
 from pylogue.integrations.pydantic_ai import PydanticAIResponder
 
-salesforce_agent_responder = PydanticAIResponder(agent=salesforce_agent)
-
 def _app_factory():
-    return app_factory(responder=salesforce_agent_responder)
+    return app_factory(
+        responder_factory=lambda: PydanticAIResponder(agent=agent),
+        sidebar_title="Dialogues with AI",
+        hero_title="Powered by Pylogue",
+        hero_subtitle="A chat application with conversation histories built using Fast HTML and Pylogue Core.",
+    )
 
 if __name__ == "__main__":
     import uvicorn

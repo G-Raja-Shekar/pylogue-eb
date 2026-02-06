@@ -3,11 +3,10 @@ Chat app wrapper with multiple local histories.
 Run: python -m scripts.examples.chat_app_with_histories.main
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -27,6 +26,9 @@ from monsterui.all import (
 from pylogue.core import (
     EchoResponder,
     IMPORT_PREFIX,
+    _register_google_auth_routes,
+    _session_cookie_name,
+    google_oauth_config_from_env,
     get_core_headers,
     register_core_static,
     register_ws_routes,
@@ -36,8 +38,12 @@ from pylogue.core import (
 from starlette.requests import Request
 from starlette.responses import FileResponse
 from starlette.responses import JSONResponse
+from starlette.responses import RedirectResponse
 
-DB_PATH = Path(__file__).resolve().parent / "chat_app.db"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CHAT_APP_DIR = PROJECT_ROOT / "scripts" / "examples" / "chat_app_with_histories"
+STATIC_DIR = CHAT_APP_DIR / "static"
+DB_PATH = CHAT_APP_DIR / "chat_app.db"
 db = Database(f"sqlite:///{DB_PATH}")
 
 
@@ -57,8 +63,21 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def app_factory(responder=None) -> MUFastHTML:
-    responder = responder or EchoResponder()
+def app_factory(
+    responder=None,
+    responder_factory=None,
+    db_path: Path | str | None = None,
+    sidebar_title: str = "Pylogue",
+    hero_title: str = "Fast HTML + Pylogue Core",
+    hero_subtitle: str = (
+        "One UI wraps multiple Pylogue chat sessions. Pick a chat on the left, "
+        "start a new one, or return to previous conversations instantly."
+    ),
+) -> MUFastHTML:
+    resolved_db_path = Path(db_path) if db_path is not None else DB_PATH
+    local_db = Database(f"sqlite:///{resolved_db_path}")
+    if responder_factory is None:
+        responder = responder or EchoResponder()
     headers = list(get_core_headers(include_markdown=True))
     headers.extend(
         [
@@ -71,21 +90,40 @@ def app_factory(responder=None) -> MUFastHTML:
         ]
     )
 
-    app = MUFastHTML(exts="ws", hdrs=tuple(headers), pico=False)
+    oauth_cfg = google_oauth_config_from_env()
+    auth_required = bool(oauth_cfg and oauth_cfg.auth_required)
+    session_secret = (
+        oauth_cfg.session_secret
+        if oauth_cfg and oauth_cfg.session_secret
+        else os.getenv("PYLOGUE_SESSION_SECRET")
+    )
+    app_kwargs = {"exts": "ws", "hdrs": tuple(headers), "pico": False}
+    app_kwargs["session_cookie"] = _session_cookie_name()
+    if session_secret:
+        app_kwargs["secret_key"] = session_secret
+    app = MUFastHTML(**app_kwargs)
     register_core_static(app)
-    app_static_dir = Path(__file__).resolve().parent / "static"
+    auth_paths = _register_google_auth_routes(app, oauth_cfg) if oauth_cfg else None
+
+    def _is_authorized(request: Request) -> bool:
+        if not auth_required:
+            return True
+        auth = request.session.get("auth")
+        return isinstance(auth, dict)
 
     @app.route("/static/chat_app.css")
     def _chat_app_css():
-        return FileResponse(app_static_dir / "chat_app.css")
+        return FileResponse(STATIC_DIR / "chat_app.css")
 
     @app.route("/static/chat_app.js")
     def _chat_app_js():
-        return FileResponse(app_static_dir / "chat_app.js")
+        return FileResponse(STATIC_DIR / "chat_app.js")
 
     @app.route("/api/chats", methods=["GET"])
-    def list_chats():
-        items = list(chats())
+    def list_chats(request: Request):
+        if not _is_authorized(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        items = list(local_db.create(Chat, pk="id")())
         items.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)
         return JSONResponse(
             [
@@ -101,6 +139,9 @@ def app_factory(responder=None) -> MUFastHTML:
 
     @app.route("/api/chats", methods=["POST"])
     async def create_chat(request: Request):
+        if not _is_authorized(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        chats = local_db.create(Chat, pk="id")
         data = await request.json()
         chat_id = data.get("id") or str(uuid4())
         title = data.get("title") or "New chat"
@@ -123,7 +164,10 @@ def app_factory(responder=None) -> MUFastHTML:
         )
 
     @app.route("/api/chats/{chat_id}", methods=["GET"])
-    def get_chat(chat_id: str):
+    def get_chat(request: Request, chat_id: str):
+        if not _is_authorized(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        chats = local_db.create(Chat, pk="id")
         try:
             chat = chats[chat_id]
         except Exception:
@@ -139,6 +183,9 @@ def app_factory(responder=None) -> MUFastHTML:
 
     @app.route("/api/chats/{chat_id}", methods=["POST"])
     async def save_chat(chat_id: str, request: Request):
+        if not _is_authorized(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        chats = local_db.create(Chat, pk="id")
         data = await request.json()
         payload = data.get("payload") or {"cards": []}
         title = data.get("title") or "New chat"
@@ -164,7 +211,10 @@ def app_factory(responder=None) -> MUFastHTML:
         )
 
     @app.route("/api/chats/{chat_id}", methods=["DELETE"])
-    def delete_chat(chat_id: str):
+    def delete_chat(request: Request, chat_id: str):
+        if not _is_authorized(request):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        chats = local_db.create(Chat, pk="id")
         try:
             chats.delete(chat_id)
         except Exception:
@@ -172,13 +222,26 @@ def app_factory(responder=None) -> MUFastHTML:
         return JSONResponse({"deleted": True})
 
     sessions: dict[int, dict] = {}
-    register_ws_routes(app, responder=responder, sessions=sessions)
+    register_ws_routes(
+        app,
+        responder=responder,
+        responder_factory=responder_factory,
+        sessions=sessions,
+        auth_required=auth_required,
+    )
 
-    def _sidebar():
+    def _sidebar(request: Request):
+        show_logout = auth_required and _is_authorized(request)
+        logout_href = auth_paths["logout_path"] if auth_paths else "/logout"
         return Div(
             Div(
-                H1("Pylogue", cls="text-xl font-semibold"),
-                Span("Multi-Chat", cls="meta-pill"),
+                H1(sidebar_title, cls="text-xl font-semibold"),
+                A(
+                    UkIcon("sign-out"),
+                    Span("Logout"),
+                    href=logout_href,
+                    cls=(ButtonT.secondary, "text-xs"),
+                ) if show_logout else None,
                 cls="sidebar-header",
             ),
             Button(
@@ -195,13 +258,8 @@ def app_factory(responder=None) -> MUFastHTML:
     def _hero():
         return Div(
             Div(
-                P("PYLOGUE WRAPPER", cls="meta-pill"),
-                H2("Fast HTML + Pylogue Core", cls="hero-title"),
-                P(
-                    "One UI wraps multiple Pylogue chat sessions. Pick a chat on the left, "
-                    "start a new one, or return to previous conversations instantly.",
-                    cls="hero-sub",
-                ),
+                H2(hero_title, cls="hero-title"),
+                P(hero_subtitle, cls="hero-sub"),
                 cls="space-y-2",
             ),
             Div(
@@ -236,7 +294,7 @@ def app_factory(responder=None) -> MUFastHTML:
             Form(
                 render_input(),
                 Div(
-                    Button("Send", cls=ButtonT.primary, type="submit"),
+                    Button("Send", cls=ButtonT.primary, type="submit", id="chat-send-btn"),
                     P("Cmd/Ctrl+Enter to send", cls="text-xs text-slate-400"),
                     cls="flex flex-col gap-2 items-stretch",
                 ),
@@ -258,20 +316,24 @@ def app_factory(responder=None) -> MUFastHTML:
             cls="main-panel space-y-6",
         )
 
-    def _shell():
+    def _shell(request: Request):
         return Div(
-            _sidebar(),
+            _sidebar(request),
             _main_panel(),
             cls="app-shell",
         )
 
     @app.route("/")
-    def home():
+    def home(request: Request):
+        if auth_required and not _is_authorized(request):
+            request.session["next"] = "/"
+            login_path = auth_paths["login_path"] if auth_paths else "/login"
+            return RedirectResponse(login_path, status_code=303)
         return (
-            Title("Pylogue Multi-Chat"),
+            Title(hero_title),
             Meta(name="viewport", content="width=device-width, initial-scale=1.0"),
             Body(
-                _shell(),
+                _shell(request),
                 cls="min-h-screen",
                 data_import_prefix=IMPORT_PREFIX,
             ),
