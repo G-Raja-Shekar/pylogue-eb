@@ -85,15 +85,22 @@ def load_insurance_database_schema():
     except FileNotFoundError:
         return "Insurance database schema file not found."
 
-# Configure Logfire with write token
-logfire.configure(
-    token=os.environ.get('EB_LOGFIRE_WRITE_TOKEN'),
-    service_name='salesforce-agent',
-    environment='dev',
-)
-logfire.instrument_pydantic_ai()
-logfire.instrument_psycopg()
-logfire.info('Application started', service='salesforce-agent')
+# Configure Logfire with write token (optional - won't prompt if missing)
+logfire_token = os.environ.get('EB_LOGFIRE_WRITE_TOKEN')
+if logfire_token:
+    logfire.configure(
+        token=logfire_token,
+        service_name='salesforce-agent',
+        environment='dev',
+        console=False,  # Disable console output and interactive prompts
+    )
+    logfire.instrument_pydantic_ai()
+    logfire.instrument_psycopg()
+    logfire.info('Application started', service='salesforce-agent')
+else:
+    # Configure logfire to not send data when no token is provided
+    logfire.configure(send_to_logfire=False)
+    print("Logfire disabled - no EB_LOGFIRE_WRITE_TOKEN found")
 
 instructions = """
 System Instruction for Salesforce & Database Query Assistant:
