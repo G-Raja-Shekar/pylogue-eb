@@ -56,9 +56,6 @@ class Chat:
     payload: str = ""
 
 
-chats = db.create(Chat, pk="id")
-
-
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
