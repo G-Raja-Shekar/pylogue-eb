@@ -14,12 +14,12 @@ from agent import sql_agent, sql_tool
 def sql_query_runner(sql_query: str):
     return sql_tool.run_sql(sql_query)
 
-def _render_altair_chart_py(sql_query: str, altair_python: str):
+def render_chart(sql_query: str, altair_python: str):
     return render_altair_chart_py(sql_query_runner=sql_query_runner, sql_query=sql_query, altair_python=altair_python)
 
-_render_altair_chart_py.__doc__ = render_altair_chart_py.__doc__
+render_chart.__doc__ = render_altair_chart_py.__doc__
 
-sql_agent.set_tools([_render_altair_chart_py])
+sql_agent.set_tools([render_chart])
 
 def _app_factory():
     return app_factory(
