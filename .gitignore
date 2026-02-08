@@ -111,3 +111,5 @@ ENV/
 .vscode/
 .idea/
 
+*.db
+voicetree-7-2/
