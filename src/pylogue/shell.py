@@ -43,7 +43,7 @@ from starlette.responses import RedirectResponse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CHAT_APP_DIR = PROJECT_ROOT / "scripts" / "examples" / "chat_app_with_histories"
-STATIC_DIR = CHAT_APP_DIR / "static"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 DB_PATH = CHAT_APP_DIR / "chat_app.db"
 
 
