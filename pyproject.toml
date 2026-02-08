@@ -27,10 +27,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "coverage",  # testing
-    "mypy",  # linting
-    "pytest",  # testing
-    "ruff"  # linting
+    "build>=1.4.0",
+    "coverage", # testing
+    "mypy", # linting
+    "pytest", # testing # linting
+    "ruff",
+    "twine>=6.2.0",
 ]
 pydantic-ai = [
     "logfire>=4.22.0",
