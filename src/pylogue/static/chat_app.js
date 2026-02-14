@@ -204,6 +204,10 @@ const selectChat = async (chatId) => {
     renderChatList(chatIndex);
     const payload = await api.getChat(chatId);
     sendImport(payload);
+    // Allow time for htmx to swap content before scrolling
+    setTimeout(() => {
+        scrollToBottom();
+    }, 100);
     if (isMobile()) closeSidebar();
 };
 
@@ -215,6 +219,9 @@ const createChat = async () => {
     setActiveChatTitle(chat.title || "New chat");
     renderChatList(chatIndex);
     sendImport({ cards: [] });
+    setTimeout(() => {
+        scrollToBottom();
+    }, 100);
     if (isMobile()) closeSidebar();
 };
 
@@ -282,6 +289,10 @@ const init = async () => {
     renderChatList(chatIndex);
     if (active) await selectChat(active);
     closeSidebar();
+    // Ensure scroll to bottom after initial load
+    setTimeout(() => {
+        scrollToBottom();
+    }, 200);
 };
 
 document.getElementById("new-chat-btn")?.addEventListener("click", () => {
@@ -306,12 +317,21 @@ document.addEventListener("keydown", (event) => {
     }
 });
 
+const scrollToBottom = () => {
+    const scrollAnchor = document.getElementById("scroll-anchor");
+    if (scrollAnchor) {
+        scrollAnchor.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+};
+
 document.body.addEventListener("htmx:wsAfterMessage", () => {
     saveCurrentChat();
+    scrollToBottom();
 });
 
 document.body.addEventListener("htmx:afterSwap", () => {
     saveCurrentChat();
+    scrollToBottom();
 });
 
 document.addEventListener("click", (event) => {
