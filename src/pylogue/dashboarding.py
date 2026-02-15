@@ -1,8 +1,11 @@
-import pandas as pd
-import altair as alt
-from pylogue.embeds import store_html
-import html as html_lib
-from loguru import logger
+try:
+    import pandas as pd
+    import altair as alt
+    from pylogue.embeds import store_html
+    import html as html_lib
+    from loguru import logger
+except ImportError as e:
+    logger.error(f"install them with `pip install \"pylogue[dashboard]\"` to use dashboarding features: {e}")
 
 def render_altair_chart_py(sql_query_runner: callable, sql_query: str, altair_python: str):
     """Render an Altair chart using Python code that defines `chart`.
