@@ -302,6 +302,63 @@ button#chat-send-btn:hover {
   border-left: 3px solid #eaecf0;
 }
 
+.delete-chat-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(16, 24, 40, 0.36);
+}
+
+.delete-chat-modal.is-open {
+  display: flex;
+}
+
+.delete-chat-modal-card {
+  width: min(440px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 18px 36px rgba(16, 24, 40, 0.14);
+  padding: 20px;
+}
+
+.delete-chat-modal-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.delete-chat-modal-text {
+  margin: 10px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.delete-chat-modal-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.delete-chat-confirm-btn,
+button.delete-chat-confirm-btn {
+  background: #b42318;
+  border: 1px solid #b42318;
+  color: #ffffff;
+}
+
+.delete-chat-confirm-btn:hover,
+button.delete-chat-confirm-btn:hover {
+  background: #912018;
+}
+
 @media (max-width: 920px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -377,5 +434,10 @@ button#chat-send-btn:hover {
 
   .hero .flex.gap-2 {
     gap: 0.5rem;
+  }
+
+  .delete-chat-modal-card {
+    border-radius: 12px;
+    padding: 16px;
   }
 }

@@ -1,14 +1,10 @@
-import duckdb
 import os
-import base64
-import altair as alt
-import altair
 import dotenv
 import pandas as pd
 from pathlib import Path
 from pydantic_ai import Agent
 from pylogue.core import main as create_core_app
-from pylogue.embeds import store_html
+from pylogue.dashboarding import render_plotly_chart_py
 import logfire
 from pylogue.integrations.pydantic_ai import PydanticAIResponder
 
@@ -109,55 +105,28 @@ def _flatten_record(record: dict, prefix: str = "") -> dict:
     return flat
 
 
+def _salesforce_sql_query_runner(soql_query: str):
+    results = run_salesforce_query(soql_query, purpose="fetching chart data")
+    flattened = [_flatten_record(r) for r in results]
+    return pd.DataFrame(flattened).to_dict(orient="records")
+
+
 @agent.tool_plain()
-def render_altair_chart_py(soql_query: str, altair_python: str, purpose: str):
-    """Render an Altair chart using Python code that defines `chart`.
+def render_plotly_chart(soql_query: str, plotly_python: str, purpose: str):
+    """Render a Plotly chart using Python code that defines `fig`.
 
-    Always provided tooltips for interactivity in the chart.
-
-    The code runs with access to: results (raw Salesforce records),
-    df (pandas DataFrame), alt (Altair), pd (pandas).
+    The code runs with access to:
+    results (raw Salesforce records), df (pandas DataFrame),
+    px (plotly.express), go (plotly.graph_objects), make_subplots.
     """
     try:
-        results = run_salesforce_query(soql_query, purpose="Fetch Salesforce data for the chart.")
-        flattened = [_flatten_record(r) for r in results]
-        df = pd.DataFrame(flattened)
-
-        safe_builtins = {
-            "len": len,
-            "min": min,
-            "max": max,
-            "sum": sum,
-            "range": range,
-            "list": list,
-            "dict": dict,
-        }
-        safe_globals = {"__builtins__": safe_builtins}
-        safe_locals = {"results": results, "df": df, "alt": alt, "pd": pd}
-
-        try:
-            exec(altair_python, safe_globals, safe_locals)
-        except Exception as exc:  # noqa: BLE001
-            return f"Error executing Altair code: {exc}"
-
-        chart = safe_locals.get("chart")
-        if chart is None or not hasattr(chart, "to_html"):
-            return "Error: Altair code must define a `chart` variable."
-
-        try:
-            html_content = chart.to_html(embed_options={"actions": False})
-        except Exception as exc:  # noqa: BLE001
-            return f"Error serializing chart HTML: {exc}"
-
-        iframe_html = (
-            f"<iframe src=\"data:text/html;base64,{base64.b64encode(html_content.encode()).decode()}\" "
-            f"frameborder=\"0\" style=\"width:100%; height:480px;\"></iframe>"
+        return render_plotly_chart_py(
+            sql_query_runner=_salesforce_sql_query_runner,
+            sql_query=soql_query,
+            plotly_python=plotly_python,
         )
-
-        html_id = store_html(iframe_html)
-        return {"_pylogue_html_id": html_id, "message": "Chart rendered."}
     except Exception as e:
-        return f"Error in render_altair_chart_py: {e}"
+        return f"Error in render_plotly_chart: {e}"
 
 def app_factory():
     return create_core_app(

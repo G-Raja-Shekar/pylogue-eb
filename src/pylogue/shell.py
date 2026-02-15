@@ -338,12 +338,48 @@ def app_factory(
             _chat_input(),
             cls="main-panel",
         )
+
+    def _delete_chat_modal():
+        return Div(
+            Div(
+                H3("Delete chat?", cls="delete-chat-modal-title"),
+                P(
+                    "This will permanently delete ",
+                    Strong("", id="delete-chat-name"),
+                    ".",
+                    cls="delete-chat-modal-text",
+                ),
+                Div(
+                    Button(
+                        "Cancel",
+                        type="button",
+                        id="delete-chat-cancel-btn",
+                        cls=(ButtonT.secondary, "delete-chat-cancel-btn"),
+                    ),
+                    Button(
+                        "Delete",
+                        type="button",
+                        id="delete-chat-confirm-btn",
+                        cls=(ButtonT.primary, "delete-chat-confirm-btn"),
+                    ),
+                    cls="delete-chat-modal-actions",
+                ),
+                cls="delete-chat-modal-card",
+            ),
+            id="delete-chat-modal",
+            cls="delete-chat-modal",
+            aria_hidden="true",
+            role="dialog",
+            aria_modal="true",
+            tabindex="-1",
+        )
     
     def _shell(request: Request):
         return Div(
             Div(id="sidebar-backdrop", cls="sidebar-backdrop"),
             _sidebar(request),
             _main_panel(),
+            _delete_chat_modal(),
             cls="app-shell",
         )
 

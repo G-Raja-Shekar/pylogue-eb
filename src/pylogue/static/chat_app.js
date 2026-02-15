@@ -5,6 +5,8 @@ if (document.body) {
 }
 let chatIndex = [];
 const MOBILE_QUERY = "(max-width: 920px)";
+let deleteDialogResolver = null;
+let deleteDialogLastFocus = null;
 
 const TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M3 6h18"/>
@@ -76,6 +78,44 @@ const openSidebar = () => {
 const closeSidebar = () => {
     document.body.classList.remove("sidebar-open");
 };
+
+const getDeleteModal = () => document.getElementById("delete-chat-modal");
+
+const isDeleteModalOpen = () => {
+    const modal = getDeleteModal();
+    return !!modal && modal.classList.contains("is-open");
+};
+
+const closeDeleteDialog = (confirmed) => {
+    const modal = getDeleteModal();
+    if (!modal) return;
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+    if (deleteDialogLastFocus && typeof deleteDialogLastFocus.focus === "function") {
+        deleteDialogLastFocus.focus();
+    }
+    deleteDialogLastFocus = null;
+    if (deleteDialogResolver) {
+        deleteDialogResolver(Boolean(confirmed));
+        deleteDialogResolver = null;
+    }
+};
+
+const openDeleteDialog = (title) => new Promise((resolve) => {
+    const modal = getDeleteModal();
+    const nameEl = document.getElementById("delete-chat-name");
+    if (!modal || !nameEl) {
+        resolve(false);
+        return;
+    }
+    deleteDialogLastFocus = document.activeElement;
+    nameEl.textContent = `"${title}"`;
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+    deleteDialogResolver = resolve;
+    const cancelBtn = document.getElementById("delete-chat-cancel-btn");
+    cancelBtn?.focus();
+});
 
 const renderChatList = (index) => {
     const list = document.getElementById("chat-list");
@@ -226,7 +266,7 @@ const createChat = async () => {
 };
 
 const confirmDelete = async (chatId, title) => {
-    const ok = window.confirm(`Delete "${title}"? This cannot be undone.`);
+    const ok = await openDeleteDialog(title);
     if (!ok) return;
     const success = await api.deleteChat(chatId);
     if (!success) return;
@@ -313,7 +353,25 @@ document.getElementById("sidebar-backdrop")?.addEventListener("click", () => {
 
 document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+        if (isDeleteModalOpen()) {
+            closeDeleteDialog(false);
+            return;
+        }
         closeSidebar();
+    }
+});
+
+document.getElementById("delete-chat-cancel-btn")?.addEventListener("click", () => {
+    closeDeleteDialog(false);
+});
+
+document.getElementById("delete-chat-confirm-btn")?.addEventListener("click", () => {
+    closeDeleteDialog(true);
+});
+
+document.getElementById("delete-chat-modal")?.addEventListener("click", (event) => {
+    if (event.target.id === "delete-chat-modal") {
+        closeDeleteDialog(false);
     }
 });
 

@@ -13,8 +13,7 @@ logfire.configure()
 logfire.instrument_pydantic_ai()
 
 instructions = f"""
-You only talk in haikus, 5,7,5 syllable format. Always use new lines for each line of haiku.
-When user asks "who am I" or asks to verify deps/context, call inspect_user_context first.
+You talk as little as you can, while being helpful
 """
 
 agent = Agent(
@@ -23,7 +22,6 @@ agent = Agent(
     instructions=instructions,
 )
 deps = None
-
 
 @agent.tool
 def inspect_user_context(ctx: RunContext[Any], purpose: str = "verifying user context"):
