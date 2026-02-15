@@ -306,15 +306,19 @@ def app_factory(
             cls="hero",
         )
 
-    def _chat_panel():
+    def _chat_content():
         return Div(
-            Div(render_cards([])),
+            render_cards([]),
+            cls="chat-content-wrapper",
+        )
+
+    def _chat_input():
+        return Div(
             Form(
                 render_input(),
                 Div(
                     Button("Send", cls=ButtonT.primary, type="submit", id="chat-send-btn"),
-                    P("Cmd/Ctrl+Enter to send", cls="text-xs text-slate-400"),
-                    cls="flex flex-col gap-2 items-stretch",
+                    cls="flex items-center",
                 ),
                 id="form",
                 hx_ext="ws",
@@ -322,18 +326,19 @@ def app_factory(
                 ws_send=True,
                 hx_target="#cards",
                 hx_swap="outerHTML",
-                cls="flex flex-col sm:flex-row gap-3 items-stretch pt-4",
+                cls="flex flex-col sm:flex-row gap-3 items-stretch",
             ),
-            cls="chat-panel space-y-4",
+            cls="chat-input-area",
         )
 
     def _main_panel():
         return Div(
             _hero(),
-            _chat_panel(),
-            cls="main-panel space-y-6",
+            _chat_content(),
+            _chat_input(),
+            cls="main-panel",
         )
-
+    
     def _shell(request: Request):
         return Div(
             Div(id="sidebar-backdrop", cls="sidebar-backdrop"),
