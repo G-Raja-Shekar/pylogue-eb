@@ -1,145 +1,170 @@
+import html as html_lib
+import json
+
+from loguru import logger
+from pylogue.embeds import store_html
+
 try:
     import pandas as pd
-    import altair as alt
-    from pylogue.embeds import store_html
-    import html as html_lib
-    from loguru import logger
-except ImportError as e:
-    logger.error(f"install them with `pip install \"pylogue[dashboard]\"` to use dashboarding features: {e}")
+except ImportError:
+    pd = None
 
-def render_altair_chart_py(sql_query_runner: callable, sql_query: str, altair_python: str):
-    """Render an Altair chart using Python code that defines `chart`.
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    from plotly.utils import PlotlyJSONEncoder
+except ImportError:
+    px = None
+    go = None
+    make_subplots = None
+    PlotlyJSONEncoder = None
 
-    Always provided tooltips for interactivity in the chart.
 
-    The code runs with access to: df (pandas DataFrame), alt (Altair), pd (
-    df (pandas DataFrame), alt (Altair), pd (pandas).
+def _preview(code: str, limit: int = 240) -> str:
+    if not code:
+        return ""
+    compact = " ".join(code.strip().split())
+    return compact[:limit] + ("..." if len(compact) > limit else "")
+
+
+def render_plotly_chart_py(sql_query_runner: callable, sql_query: str, plotly_python: str):
+    """Render a Plotly chart using Python code that defines `fig`.
+
+    Prioritizes responsive behavior for chat UIs:
+    - fills 100% available width of the chat card
+    - adapts to browser resize and mobile breakpoints
+
+    The code runs with access to:
+    df (pandas DataFrame), pd (pandas), px (plotly.express),
+    go (plotly.graph_objects), make_subplots (plotly.subplots.make_subplots).
     """
 
     try:
-        local_scope = {"alt": alt, "pd": pd}
+        if (
+            pd is None
+            or go is None
+            or px is None
+            or make_subplots is None
+            or PlotlyJSONEncoder is None
+        ):
+            return (
+                'Missing dependencies. Install with: '
+                'pip install "pylogue[dashboard]" plotly'
+            )
+
+        local_scope = {
+            "pd": pd,
+            "px": px,
+            "go": go,
+            "make_subplots": make_subplots,
+        }
         if sql_query_runner is not None and sql_query is not None:
             df = pd.DataFrame(sql_query_runner(sql_query))
             local_scope["df"] = df
-        try:
-            exec(altair_python, local_scope)
-        except Exception as exc:  # noqa: BLE001
-            return f"Error executing Altair code: {exc}"
-
-        chart = local_scope.get("chart")
-        if chart is None or not hasattr(chart, "to_html"):
-            return "Error: Altair code must define a `chart` variable."
 
         try:
-            spec = chart.to_dict()
-            html_content = chart.to_html(embed_options={"actions": False})
+            exec(plotly_python, local_scope)
+            logger.info(
+                f"Executed Plotly code: sql_attached={bool(sql_query_runner and sql_query)}, code_preview\n---\n{plotly_python}\n---\n"
+            )
         except Exception as exc:  # noqa: BLE001
-            return f"Error serializing chart HTML: {exc}"
+            logger.exception(
+                "Plotly code execution failed: sql_attached={}, code_preview={!r}",
+                bool(sql_query_runner and sql_query),
+                _preview(plotly_python),
+            )
+            return f"Error executing Plotly code: {exc}"
 
-        logger.debug(
-            "[ALTDBG] chart class={} top-level keys={}",
-            chart.__class__.__name__,
-            sorted(spec.keys()),
-        )
-        logger.debug(
-            "[ALTDBG] spec layout signals: width={!r} height={!r} vconcat={} hconcat={} concat={} layer={} facet={} repeat={}",
-            spec.get("width"),
-            spec.get("height"),
-            "vconcat" in spec,
-            "hconcat" in spec,
-            "concat" in spec,
-            "layer" in spec,
-            "facet" in spec,
-            "repeat" in spec,
-        )
+        fig = local_scope.get("fig")
+        if fig is None or not hasattr(fig, "to_plotly_json"):
+            return "Error: Plotly code must define a `fig` variable."
 
-        width = spec.get("width")
-        height = spec.get("height")
-        view_cfg = (spec.get("config") or {}).get("view") or {}
-        logger.debug(
-            "[ALTDBG] config.view: continuousWidth={!r} continuousHeight={!r} discreteWidth={!r} discreteHeight={!r}",
-            view_cfg.get("continuousWidth"),
-            view_cfg.get("continuousHeight"),
-            view_cfg.get("discreteWidth"),
-            view_cfg.get("discreteHeight"),
-        )
+        try:
+            fig_json = fig.to_plotly_json()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "Plotly serialization failed: fig_type={}, code_preview={!r}",
+                fig.__class__.__name__ if fig is not None else "unknown",
+                _preview(plotly_python),
+            )
+            return f"Error serializing Plotly figure: {exc}"
 
-        if not isinstance(width, (int, float)):
-            width = view_cfg.get("continuousWidth")
-        if not isinstance(height, (int, float)):
-            height = view_cfg.get("continuousHeight")
+        layout = fig_json.get("layout") or {}
+        user_height = layout.get("height")
+        has_explicit_height = isinstance(user_height, (int, float))
+        default_height = int(user_height) if has_explicit_height else 420
 
-        if not isinstance(width, (int, float)):
-            width = 300
-        if not isinstance(height, (int, float)):
-            height = 300
-        logger.debug("[ALTDBG] resolved iframe seed size: width={} height={}", width, height)
+        if not has_explicit_height:
+            # Let Plotly autosize width while we manage a mobile-friendly height.
+            fig_json.setdefault("layout", {})
+            fig_json["layout"]["autosize"] = True
+            fig_json["layout"].pop("width", None)
 
-        # Altair emits `#vis.vega-embed { width: 100% }`; override that so
-        # intrinsic concat sizes can be measured from the rendered chart.
-        sizing_css = (
-            "<style>"
-            "html,body{margin:0;padding:0;background:#fff;overflow:hidden!important;}"
-            "#vis.vega-embed,.vega-embed{width:max-content!important;max-width:none!important;"
-            "display:inline-flex!important;align-items:flex-start!important;justify-content:flex-start!important;}"
-            "</style>"
-        )
-        if "</head>" in html_content:
-            html_content = html_content.replace("</head>", sizing_css + "</head>")
-        else:
-            html_content = sizing_css + html_content
-
-        # Resize the iframe after Vega-Embed has actually rendered.
-        # This avoids guessing padding and works for concat/facet charts.
-        resize_script = (
+        fig_payload = json.dumps(fig_json, cls=PlotlyJSONEncoder)
+        script_html = (
+            "<div id='plot-wrap' style='width:100%;max-width:100%;margin:0;'>"
+            "<div id='plot-root' style='width:100%;'></div>"
+            "</div>"
+            "<script src='https://cdn.plot.ly/plotly-2.35.2.min.js'></script>"
             "<script>"
-            "(function(){"
-            "function setFrameSize(){"
-            "if(!window.frameElement) return false;"
-            "var root=document.querySelector('#vis.vega-embed')||document.querySelector('.vega-embed')||document.body;"
-            "if(!root) return false;"
-            "var rect=root.getBoundingClientRect();"
-            "var w=Math.ceil(Math.max(rect.width||0, root.scrollWidth||0))+2;"
-            "var h=Math.ceil(Math.max(rect.height||0, root.scrollHeight||0))+2;"
-            "if(w>0){window.frameElement.width=String(w);window.frameElement.style.width=w+'px';}"
-            "if(h>0){window.frameElement.height=String(h);window.frameElement.style.height=h+'px';}"
-            "return w>0&&h>0;"
+            f"const fig={fig_payload};"
+            f"const explicitHeight={'true' if has_explicit_height else 'false'};"
+            f"const defaultHeight={default_height};"
+            "const gd=document.getElementById('plot-root');"
+            "function mobileHeight(){"
+            "if(explicitHeight) return defaultHeight;"
+            "const w=Math.max(280, Math.min(window.innerWidth||1024, 1400));"
+            "return Math.max(280, Math.min(560, Math.round(w*0.6)));"
             "}"
-            "var i=0,max=180;"
-            "(function loop(){i++;setFrameSize();if(i<max) requestAnimationFrame(loop);})();"
-            "window.addEventListener('load', function(){setTimeout(setFrameSize, 0);setTimeout(setFrameSize, 120);setTimeout(setFrameSize, 400);});"
-            "})();"
+            "function render(){"
+            "fig.layout=fig.layout||{};"
+            "fig.layout.autosize=true;"
+            "fig.layout.width=null;"
+            "fig.layout.height=mobileHeight();"
+            "if(window.frameElement){"
+            "window.frameElement.style.height=fig.layout.height+'px';"
+            "window.frameElement.height=String(fig.layout.height);"
+            "}"
+            "Plotly.react(gd, fig.data||[], fig.layout, {responsive:true, displaylogo:false});"
+            "}"
+            "render();"
+            "const ro=new ResizeObserver(()=>{"
+            "render();"
+            "try{Plotly.Plots.resize(gd);}catch(e){}"
+            "});"
+            "ro.observe(document.body);"
+            "window.addEventListener('resize', ()=>{"
+            "render();"
+            "try{Plotly.Plots.resize(gd);}catch(e){}"
+            "});"
             "</script>"
         )
-        if "</body>" in html_content:
-            html_content = html_content.replace("</body>", resize_script + "</body>")
-        else:
-            html_content = html_content + resize_script
 
-        logger.debug(
-            "[ALTDBG] html stats: raw_len={} contains_vega_embed={} contains_width_100_pct={}",
-            len(html_content),
-            "vega-embed" in html_content,
-            "width: 100%" in html_content or "width:100%" in html_content,
+        srcdoc = (
+            "<!doctype html><html><head><meta charset='utf-8'/>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+            "<style>html,body{margin:0;padding:0;background:#fff;overflow:hidden;}"
+            "#plot-wrap{width:100%;max-width:100%;}</style>"
+            "</head><body>"
+            f"{script_html}"
+            "</body></html>"
         )
-
-        escaped_srcdoc = html_lib.escape(html_content, quote=True)
+        escaped_srcdoc = html_lib.escape(srcdoc, quote=True)
         iframe_html = (
-            f'<iframe srcdoc="{escaped_srcdoc}" '
-            f'width="{int(width)}" height="{int(height)}" '
-            f'style="width:{int(width)}px; height:{int(height)}px; border:0; display:block;" '
-            f'title="Altair Chart"></iframe>'
+            '<iframe '
+            f'srcdoc="{escaped_srcdoc}" '
+            f'height="{default_height}" '
+            "style=\"width:100%;max-width:100%;height:"
+            f"{default_height}px;border:0;display:block;\" "
+            'title="Plotly Chart"></iframe>'
         )
-        logger.debug(
-            "[ALTDBG] iframe html length={} attrs width={} height={}",
-            len(iframe_html),
-            int(width),
-            int(height),
-        )
-
         html_id = store_html(iframe_html)
-        logger.debug("[ALTDBG] stored html token={}", html_id)
-        return {"_pylogue_html_id": html_id, "message": "Chart rendered."}
+        return {"_pylogue_html_id": html_id, "message": "Plotly chart rendered."}
     except Exception as e:
-        logger.debug(f"Error in render_altair_chart_py: {e}")
-        return f"Error in render_altair_chart_py: {e}"
+        logger.exception(
+            "Unhandled error in render_plotly_chart_py: sql_attached={}, code_preview={!r}",
+            bool(sql_query_runner and sql_query),
+            _preview(plotly_python),
+        )
+        return f"Error in render_plotly_chart_py: {e}"

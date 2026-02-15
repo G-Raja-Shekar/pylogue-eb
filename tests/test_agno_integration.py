@@ -84,12 +84,12 @@ class _FakeAgentWithSingularToolEvents:
         async def _stream():
             yield _Chunk(
                 event="ToolCallStarted",
-                tool=_Tool(tool_name="render_altair_chart_py", tool_args={"purpose": "chart"}, tool_call_id="tool-7"),
+                tool=_Tool(tool_name="render_plotly_chart_py", tool_args={"purpose": "chart"}, tool_call_id="tool-7"),
             )
             yield _Chunk(
                 event="ToolCallCompleted",
                 tool=_Tool(
-                    tool_name="render_altair_chart_py",
+                    tool_name="render_plotly_chart_py",
                     tool_args={"purpose": "chart"},
                     result=self.tool_result,
                     tool_call_id="tool-7",
@@ -180,7 +180,7 @@ def test_agno_responder_renders_html_from_singular_tool_event():
 
     parts = asyncio.run(_run())
 
-    assert any("Tool: render_altair_chart_py" in p for p in parts)
+    assert any("Tool: render_plotly_chart_py" in p for p in parts)
     assert any("chart-html" in p for p in parts)
 
 

@@ -1,12 +1,10 @@
 import duckdb
 import json
-import base64
-import altair as alt
 import pandas as pd
 from pathlib import Path
 from pydantic_ai import Agent
 from pylogue.core import main as create_core_app
-from pylogue.embeds import store_html
+from pylogue.dashboarding import render_plotly_chart_py
 import logfire
 from pylogue.integrations.pydantic_ai import PydanticAIResponder
 
@@ -26,15 +24,15 @@ If a column or table is missing, ask for clarification instead of guessing.
 Never reference an alias unless it is defined in the FROM clause.
 For year-based filters, first query the latest year from the correct table and use it as the default.
 If the user's question is vague, ask for clarification.
-You can also build interactive Altair dashboards by calling the render_altair_chart tool with a SELECT query and an Altair (Vega-Lite) JSON spec. Keep queries small (<2000 rows).
-If the Vega-Lite JSON spec fails, prefer render_altair_chart_py and provide Altair-Python code that defines a `chart` variable using the provided `df` (e.g., `chart = alt.Chart(df)...`).
-When using render_altair_chart_py, you may use import statements if needed.
+You can also build interactive Plotly dashboards by calling render_plotly_chart with a SELECT query and Plotly-Python code that defines a `fig` variable. Keep queries small (<2000 rows).
+When using render_plotly_chart, you may use import statements if needed.
 Available tables are registered from local CSVs (e.g., matches, deliveries); query them directly.
 Every tool call must include a `purpose` argument that briefly and non-technically states what the tool is about to do.
 Use read_vega_doc to fetch Vega/Vega-Lite specs from URLs before deciding to render charts.
 
 You will talk in less than 200 words at a time. You will not generate tables, diagrams or reasons unless asked.
 Note that the end user is not familiar with SQL or data analysis, so don't bother giving technical details what so ever.
+Before generating a plot, you will first confirm the behavior and design with the user in non-technical terms, and only after their confirmation, you will generate the plot.
 
 ALWAYS FIRST READ THE SCHEMA
 """
@@ -126,72 +124,22 @@ def execute_sql_on_csv(sql_query: str, purpose: str) -> str:
 
 
 @agent.tool_plain()
-def render_altair_chart_py(sql_query: str, altair_python: str, purpose: str):
-    import altair as alt
-    import altair
-    import pandas as pd, numpy as np
-    """Render an Altair chart using Python code that defines `chart`.
-
-    The code runs with access to: df (pandas DataFrame), alt (Altair), pd (pandas).
-    """
+def render_plotly_chart(sql_query: str, plotly_python: str, purpose: str):
+    """Render a Plotly chart using Python code that defines `fig`."""
     conn = duckdb.connect()
     register_csv_views(conn)
 
     # Enforce SELECT-only
     normalized_query = sql_query.strip().rstrip(";")
-    # if not normalized_query.lower().startswith("select"):
-    #     return "Error: Only SELECT queries are allowed. Reference registered tables like matches or deliveries."
+    if not normalized_query.lower().startswith("select"):
+        return "Error: Only SELECT queries are allowed. Reference registered tables like matches or deliveries."
 
-    limited_query = f"SELECT * FROM ({normalized_query}) t LIMIT 2000"
-    df = conn.execute(limited_query).df()
+    def _sql_query_runner(query: str):
+        limited_query = f"SELECT * FROM ({query.strip().rstrip(';')}) t LIMIT 2000"
+        return conn.execute(limited_query).df().to_dict(orient="records")
 
-    exec_env = {"__builtins__": __builtins__, "df": df, "alt": alt, "pd": pd}
-
-    try:
-        exec(altair_python, exec_env)
-    except Exception as exc:  # noqa: BLE001
-        return f"Error executing Altair code: {exc}"
-
-    chart = exec_env.get("chart")
-    if chart is None or not hasattr(chart, "to_html"):
-        return "Error: Altair code must define a `chart` variable."
-
-    def _spec_height(spec):
-        if isinstance(spec, list):
-            return max((_spec_height(s) for s in spec), default=0)
-        if not isinstance(spec, dict):
-            return 0
-        if "height" in spec and isinstance(spec["height"], (int, float)):
-            return int(spec["height"])
-        if "vconcat" in spec:
-            items = spec["vconcat"]
-            return sum(_spec_height(s) for s in items) + max(len(items) - 1, 0) * 20
-        if "hconcat" in spec:
-            return max((_spec_height(s) for s in spec["hconcat"]), default=0)
-        if "layer" in spec:
-            return max((_spec_height(s) for s in spec["layer"]), default=0)
-        if "spec" in spec:
-            return _spec_height(spec["spec"])
-        return 0
-
-    try:
-        html_content = chart.to_html(embed_options={"actions": False})
-    except Exception as exc:  # noqa: BLE001
-        return f"Error serializing chart HTML: {exc}"
-
-    try:
-        spec = chart.to_dict()
-        chart_height = _spec_height(spec)
-    except Exception:  # noqa: BLE001
-        chart_height = 0
-
-    # Add padding for titles/axes/legend to avoid scrollbars.
-    iframe_height = max(300, chart_height + 120)
-
-    iframe_html = (
-        f"<iframe src=\"data:text/html;base64,{base64.b64encode(html_content.encode()).decode()}\" "
-        f"frameborder=\"0\" style=\"width:100%; height:{iframe_height}px;\"></iframe>"
+    return render_plotly_chart_py(
+        sql_query_runner=_sql_query_runner,
+        sql_query=normalized_query,
+        plotly_python=plotly_python,
     )
-
-    html_id = store_html(iframe_html)
-    return {"_pylogue_html_id": html_id, "message": "Chart rendered."}

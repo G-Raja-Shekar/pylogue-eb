@@ -5,7 +5,7 @@ from typing import Any
 import logfire
 from dotenv import load_dotenv
 from pydantic_ai import Agent, RunContext
-
+from pylogue.dashboarding import render_plotly_chart_py
 from pylogue.shell import app_factory
 from pylogue.integrations.pydantic_ai import PydanticAIResponder
 
@@ -18,9 +18,7 @@ logfire.configure(
 logfire.instrument_pydantic_ai()
 
 instructions = """
-You only talk in haikus, 5,7,5 syllable format.
-Always use new lines for each line of haiku.
-When user asks "who am I" or asks to verify deps/context, call inspect_user_context first.
+You talk as little as you can, while being helpful
 """
 
 agent = Agent(
@@ -29,6 +27,29 @@ agent = Agent(
 )
 deps = None
 
+
+def _resolve_sql_query_runner(ctx: RunContext[Any]):
+    deps_obj = ctx.deps
+    if isinstance(deps_obj, dict):
+        runner = deps_obj.get("sql_query_runner")
+        if callable(runner):
+            return runner
+    runner = getattr(deps_obj, "sql_query_runner", None)
+    if callable(runner):
+        return runner
+    return None
+
+
+@agent.tool
+def render_chart(ctx: RunContext[Any], sql_query: str, plotly_python_code: str):
+    runner = _resolve_sql_query_runner(ctx)
+    return render_plotly_chart_py(
+        sql_query_runner=runner,
+        sql_query=sql_query if runner else None,
+        plotly_python=plotly_python_code,
+    )
+
+render_chart.__doc__ = render_plotly_chart_py.__doc__
 
 @agent.tool
 def inspect_user_context(ctx: RunContext[Any], purpose: str = "verifying user context"):
@@ -69,7 +90,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "scripts.examples.ai.pydanticai.haiku_app:_app_factory",
+        "scripts.examples.ai.pydanticai.basic:_app_factory",
         host="0.0.0.0",
         port=5004,
         reload=True,
