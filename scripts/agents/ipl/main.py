@@ -27,6 +27,15 @@ If the user's question is vague, ask for clarification.
 You can also build interactive Plotly dashboards by calling render_plotly_chart with a SELECT query and Plotly-Python code that defines a `fig` variable. Keep queries small (<2000 rows).
 When using render_plotly_chart, you may use import statements if needed.
 In chart code, use the provided `df` variable directly (a `data` alias may exist for compatibility).
+For linked two-chart interactions, always encode the click contract in
+`fig.update_layout(meta={"pylogue_linked_interaction": ...})`:
+- `source_trace`: trace index to click (typically left chart).
+- `target_trace`: trace index to update (typically right chart).
+- `season_menu_index`: dropdown index for active season (usually 0).
+- `default_season`: initial season label.
+- `target_title_annotation_index`: subplot title annotation index to update (for 2 subplots this is usually 1).
+- `lookup`: map each key `"<season>||<team>"` to payload dict with `x`, `y`, `text`, optional `customdata`, and `title`.
+Build `lookup` for every season/team combination from `df` so bar clicks can always update the right chart.
 Available tables are registered from local CSVs (e.g., matches, deliveries); query them directly.
 Every tool call must include a `purpose` argument that briefly and non-technically states what the tool is about to do.
 Use read_vega_doc to fetch Vega/Vega-Lite specs from URLs before deciding to render charts.
@@ -46,6 +55,26 @@ agent = Agent(
 deps = None
 
 DATA_DIR = Path(__file__).resolve().parent
+
+
+def _normalize_sql_query(sql_query: str) -> str:
+    query = (sql_query or "").strip()
+    if query.startswith("```"):
+        query = query.strip("`")
+        if query.lower().startswith("sql\n"):
+            query = query[4:]
+    if (query.startswith('"') and query.endswith('"')) or (
+        query.startswith("'") and query.endswith("'")
+    ):
+        query = query[1:-1]
+    query = (
+        query.replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace("\\r", "\r")
+        .strip()
+        .rstrip(";")
+    )
+    return query
 
 
 def register_csv_views(conn: duckdb.DuckDBPyConnection, csv_path: str | None = None):
@@ -109,7 +138,7 @@ def execute_sql_on_csv(sql_query: str, purpose: str) -> str:
     register_csv_views(conn)
 
     # allow only select queries
-    sql_query = sql_query.strip().rstrip(";")
+    sql_query = _normalize_sql_query(sql_query)
     # black_list_cmds = ["insert", "update", "delete", "create", "drop", "alter"]
     # if any(
     #     cmd in sql_query for cmd in black_list_cmds
@@ -131,12 +160,13 @@ def render_plotly_chart(sql_query: str, plotly_python: str, purpose: str):
     register_csv_views(conn)
 
     # Enforce SELECT-only
-    normalized_query = sql_query.strip().rstrip(";")
+    normalized_query = _normalize_sql_query(sql_query)
     if not normalized_query.lower().startswith("select"):
         return "Error: Only SELECT queries are allowed. Reference registered tables like matches or deliveries."
 
     def _sql_query_runner(query: str):
-        limited_query = f"SELECT * FROM ({query.strip().rstrip(';')}) t LIMIT 2000"
+        normalized_inner = _normalize_sql_query(query)
+        limited_query = f"SELECT * FROM ({normalized_inner}) t LIMIT 2000"
         return conn.execute(limited_query).df().to_dict(orient="records")
 
     return render_plotly_chart_py(
