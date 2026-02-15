@@ -38,6 +38,16 @@ def render_plotly_chart_py(sql_query_runner: callable, sql_query: str, plotly_py
     The code runs with access to:
     df (pandas DataFrame), pd (pandas), px (plotly.express),
     go (plotly.graph_objects), make_subplots (plotly.subplots.make_subplots).
+    A list-of-dicts alias `data` is also provided for compatibility with
+    snippets that start with `pd.DataFrame(data)`.
+
+    Plotly dropdown safety rules (prevents blank charts after selection):
+    - For `updatemenus` with `method="update"`, always provide per-trace arrays:
+      `x: [series.tolist()]`, `y: [series.tolist()]`, `text: [series.tolist()]`.
+    - For `customdata`, pass a 2D payload wrapped per trace:
+      `customdata: [df[[...]].to_numpy()]` (never a bare DataFrame).
+    - Keep trace type stable across updates, e.g. `fig.update_traces(type="bar", ...)`.
+    - Keep `hovertemplate` stable when using `customdata` in dropdown-driven updates.
     """
 
     try:
@@ -62,12 +72,13 @@ def render_plotly_chart_py(sql_query_runner: callable, sql_query: str, plotly_py
         if sql_query_runner is not None and sql_query is not None:
             df = pd.DataFrame(sql_query_runner(sql_query))
             local_scope["df"] = df
+            local_scope["data"] = df.to_dict(orient="records")
 
         try:
-            exec(plotly_python, local_scope)
             logger.info(
                 f"Executed Plotly code: sql_attached={bool(sql_query_runner and sql_query)}, code_preview\n---\n{plotly_python}\n---\n"
             )
+            exec(plotly_python, local_scope)
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "Plotly code execution failed: sql_attached={}, code_preview={!r}",
