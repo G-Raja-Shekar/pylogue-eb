@@ -1,9 +1,10 @@
-const IMPORT_PREFIX = document.body?.dataset.importPrefix || '__PYLOGUE_IMPORT__:';
+const IMPORT_PREFIX =
+    document.body?.dataset.importPrefix || "__PYLOGUE_IMPORT__:";
 if (document.body) {
-  document.body.dataset.disableCoreDownload = 'true';
+    document.body.dataset.disableCoreDownload = "true";
 }
 let chatIndex = [];
-const MOBILE_QUERY = '(max-width: 920px)';
+const MOBILE_QUERY = "(max-width: 920px)";
 
 const TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M3 6h18"/>
@@ -19,74 +20,74 @@ const PENCIL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 </svg>`;
 
 const api = {
-  async listChats() {
-    const res = await fetch('/api/chats');
-    return res.ok ? res.json() : [];
-  },
-  async createChat() {
-    const res = await fetch('/api/chats', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'New chat' })
-    });
-    return res.ok ? res.json() : null;
-  },
-  async getChat(chatId) {
-    const res = await fetch(`/api/chats/${chatId}`);
-    return res.ok ? res.json() : { cards: [] };
-  },
-  async saveChat(chatId, payload, title) {
-    const res = await fetch(`/api/chats/${chatId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payload, title })
-    });
-    return res.ok ? res.json() : null;
-  },
-  async deleteChat(chatId) {
-    const res = await fetch(`/api/chats/${chatId}`, { method: 'DELETE' });
-    return res.ok;
-  }
+    async listChats() {
+        const res = await fetch("/api/chats");
+        return res.ok ? res.json() : [];
+    },
+    async createChat() {
+        const res = await fetch("/api/chats", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "New chat" }),
+        });
+        return res.ok ? res.json() : null;
+    },
+    async getChat(chatId) {
+        const res = await fetch(`/api/chats/${chatId}`);
+        return res.ok ? res.json() : { cards: [] };
+    },
+    async saveChat(chatId, payload, title) {
+        const res = await fetch(`/api/chats/${chatId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payload, title }),
+        });
+        return res.ok ? res.json() : null;
+    },
+    async deleteChat(chatId) {
+        const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
+        return res.ok;
+    },
 };
 
 const setActiveChatId = (chatId) => {
-  document.body.dataset.activeChat = chatId;
+    document.body.dataset.activeChat = chatId;
 };
 
-const getActiveChatId = () => document.body.dataset.activeChat || '';
+const getActiveChatId = () => document.body.dataset.activeChat || "";
 
 const setActiveChatTitle = (title) => {
-  document.body.dataset.activeChatTitle = title || '';
+    document.body.dataset.activeChatTitle = title || "";
 };
 
 const getActiveChatTitle = () => {
-  const activeId = getActiveChatId();
-  if (!activeId) return '';
-  const chat = getChatById(activeId);
-  return chat?.title || '';
+    const activeId = getActiveChatId();
+    if (!activeId) return "";
+    const chat = getChatById(activeId);
+    return chat?.title || "";
 };
 
 const isMobile = () => window.matchMedia(MOBILE_QUERY).matches;
 
 const openSidebar = () => {
-  document.body.classList.add('sidebar-open');
+    document.body.classList.add("sidebar-open");
 };
 
 const closeSidebar = () => {
-  document.body.classList.remove('sidebar-open');
+    document.body.classList.remove("sidebar-open");
 };
 
 const renderChatList = (index) => {
-  const list = document.getElementById('chat-list');
-  if (!list) return;
-  list.innerHTML = '';
-  const active = getActiveChatId();
-  index.forEach((chat) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'chat-item' + (chat.id === active ? ' is-active' : '');
-    btn.dataset.chatId = chat.id;
-    btn.innerHTML = `
+    const list = document.getElementById("chat-list");
+    if (!list) return;
+    list.innerHTML = "";
+    const active = getActiveChatId();
+    index.forEach((chat) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chat-item" + (chat.id === active ? " is-active" : "");
+        btn.dataset.chatId = chat.id;
+        btn.innerHTML = `
       <div class="chat-item-main">
         <div class="chat-item-title" data-chat-title="true">${chat.title}</div>
         <div class="chat-item-meta">${formatTime(chat.updated_at)}</div>
@@ -96,243 +97,274 @@ const renderChatList = (index) => {
         <span class="chat-item-delete" title="Delete chat" aria-label="Delete chat">${TRASH_SVG}</span>
       </div>
     `;
-    btn.addEventListener('click', () => selectChat(chat.id));
-    const titleEl = btn.querySelector('[data-chat-title="true"]');
-    const edit = btn.querySelector('.chat-item-edit');
-    edit?.addEventListener('click', (event) => {
-      event.stopPropagation();
-      beginTitleEdit(chat.id, titleEl);
+        btn.addEventListener("click", () => selectChat(chat.id));
+        const titleEl = btn.querySelector('[data-chat-title="true"]');
+        const edit = btn.querySelector(".chat-item-edit");
+        edit?.addEventListener("click", (event) => {
+            event.stopPropagation();
+            beginTitleEdit(chat.id, titleEl);
+        });
+        const del = btn.querySelector(".chat-item-delete");
+        del?.addEventListener("click", (event) => {
+            event.stopPropagation();
+            confirmDelete(chat.id, chat.title || "this chat");
+        });
+        list.appendChild(btn);
     });
-    const del = btn.querySelector('.chat-item-delete');
-    del?.addEventListener('click', (event) => {
-      event.stopPropagation();
-      confirmDelete(chat.id, chat.title || 'this chat');
-    });
-    list.appendChild(btn);
-  });
 };
 
 const formatTime = (iso) => {
-  if (!iso) return '';
-  try {
-    const date = new Date(iso);
-    return date.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch (err) {
-    return '';
-  }
+    if (!iso) return "";
+    try {
+        const date = new Date(iso);
+        return date.toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    } catch (err) {
+        return "";
+    }
 };
 
 const getChatById = (chatId) => chatIndex.find((c) => c.id === chatId);
 
 const deriveTitle = (cards, currentTitle) => {
-  if (currentTitle && currentTitle !== 'New chat') return currentTitle;
-  if (!cards || !cards.length) return currentTitle || 'New chat';
-  const first = cards[0]?.question || '';
-  return first ? first.slice(0, 48) : (currentTitle || 'New chat');
+    if (currentTitle && currentTitle !== "New chat") return currentTitle;
+    if (!cards || !cards.length) return currentTitle || "New chat";
+    const first = cards[0]?.question || "";
+    return first ? first.slice(0, 48) : currentTitle || "New chat";
 };
 
 const beginTitleEdit = (chatId, titleEl) => {
-  if (!titleEl) return;
-  const current = getChatById(chatId);
-  if (!current) return;
-  const input = document.createElement('input');
-  input.className = 'chat-title-input';
-  input.type = 'text';
-  input.value = current.title || 'New chat';
-  input.setAttribute('aria-label', 'Edit chat title');
-  titleEl.replaceWith(input);
-  input.focus();
-  input.setSelectionRange(0, input.value.length);
+    if (!titleEl) return;
+    const current = getChatById(chatId);
+    if (!current) return;
+    const input = document.createElement("input");
+    input.className = "chat-title-input";
+    input.type = "text";
+    input.value = current.title || "New chat";
+    input.setAttribute("aria-label", "Edit chat title");
+    titleEl.replaceWith(input);
+    input.focus();
+    input.setSelectionRange(0, input.value.length);
 
-  const finish = async (commit) => {
-    const nextTitle = commit ? input.value.trim() : (current.title || 'New chat');
-    const finalTitle = nextTitle || 'New chat';
-    if (commit && finalTitle !== current.title) {
-      const payload = await api.getChat(chatId);
-      const saved = await api.saveChat(chatId, payload, finalTitle);
-      if (saved) {
-        const idx = chatIndex.findIndex((c) => c.id === chatId);
-        if (idx !== -1) {
-          chatIndex[idx] = { ...chatIndex[idx], ...saved };
+    const finish = async (commit) => {
+        const nextTitle = commit
+            ? input.value.trim()
+            : current.title || "New chat";
+        const finalTitle = nextTitle || "New chat";
+        if (commit && finalTitle !== current.title) {
+            const payload = await api.getChat(chatId);
+            const saved = await api.saveChat(chatId, payload, finalTitle);
+            if (saved) {
+                const idx = chatIndex.findIndex((c) => c.id === chatId);
+                if (idx !== -1) {
+                    chatIndex[idx] = { ...chatIndex[idx], ...saved };
+                }
+            }
         }
-      }
-    }
-    if (chatId === getActiveChatId()) {
-      setActiveChatTitle(finalTitle);
-    }
-    renderChatList(chatIndex);
-  };
+        if (chatId === getActiveChatId()) {
+            setActiveChatTitle(finalTitle);
+        }
+        renderChatList(chatIndex);
+    };
 
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      finish(true);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      finish(false);
-    }
-  });
-  input.addEventListener('blur', () => finish(true));
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            finish(true);
+        } else if (event.key === "Escape") {
+            event.preventDefault();
+            finish(false);
+        }
+    });
+    input.addEventListener("blur", () => finish(true));
 };
 
 const sendImport = (payload) => {
-  const form = document.getElementById('form');
-  const msg = document.getElementById('msg');
-  if (!form || !msg) return;
-  const previous = msg.value;
-  msg.value = IMPORT_PREFIX + JSON.stringify(payload || []);
-  htmx.trigger(form, 'submit');
-  msg.value = previous;
+    const form = document.getElementById("form");
+    const msg = document.getElementById("msg");
+    if (!form || !msg) return;
+    const previous = msg.value;
+    msg.value = IMPORT_PREFIX + JSON.stringify(payload || []);
+    htmx.trigger(form, "submit");
+    // Reset the value after a short delay to allow htmx to read it
+    setTimeout(() => {
+        msg.value = previous;
+    }, 50);
 };
 
 const selectChat = async (chatId) => {
-  const chat = getChatById(chatId);
-  if (!chat) return;
-  setActiveChatId(chatId);
-  setActiveChatTitle(chat.title || 'New chat');
-  renderChatList(chatIndex);
-  const payload = await api.getChat(chatId);
-  sendImport(payload);
-  if (isMobile()) closeSidebar();
+    const chat = getChatById(chatId);
+    if (!chat) return;
+    setActiveChatId(chatId);
+    setActiveChatTitle(chat.title || "New chat");
+    renderChatList(chatIndex);
+    const payload = await api.getChat(chatId);
+    sendImport(payload);
+    // Allow time for htmx to swap content before scrolling
+    setTimeout(() => {
+        scrollToBottom();
+    }, 100);
+    if (isMobile()) closeSidebar();
 };
 
 const createChat = async () => {
-  const chat = await api.createChat();
-  if (!chat) return;
-  chatIndex = [chat, ...chatIndex];
-  setActiveChatId(chat.id);
-  setActiveChatTitle(chat.title || 'New chat');
-  renderChatList(chatIndex);
-  sendImport({ cards: [] });
-  if (isMobile()) closeSidebar();
+    const chat = await api.createChat();
+    if (!chat) return;
+    chatIndex = [chat, ...chatIndex];
+    setActiveChatId(chat.id);
+    setActiveChatTitle(chat.title || "New chat");
+    renderChatList(chatIndex);
+    sendImport({ cards: [] });
+    setTimeout(() => {
+        scrollToBottom();
+    }, 100);
+    if (isMobile()) closeSidebar();
 };
 
 const confirmDelete = async (chatId, title) => {
-  const ok = window.confirm(`Delete "${title}"? This cannot be undone.`);
-  if (!ok) return;
-  const success = await api.deleteChat(chatId);
-  if (!success) return;
-  chatIndex = chatIndex.filter((c) => c.id !== chatId);
-  const active = getActiveChatId();
-  if (active === chatId) {
-    const next = chatIndex[0]?.id || '';
-    if (next) {
-      setActiveChatId(next);
-      renderChatList(chatIndex);
-      await selectChat(next);
-    } else {
-      setActiveChatId('');
-      renderChatList(chatIndex);
-      sendImport({ cards: [] });
+    const ok = window.confirm(`Delete "${title}"? This cannot be undone.`);
+    if (!ok) return;
+    const success = await api.deleteChat(chatId);
+    if (!success) return;
+    chatIndex = chatIndex.filter((c) => c.id !== chatId);
+    const active = getActiveChatId();
+    if (active === chatId) {
+        const next = chatIndex[0]?.id || "";
+        if (next) {
+            setActiveChatId(next);
+            renderChatList(chatIndex);
+            await selectChat(next);
+        } else {
+            setActiveChatId("");
+            renderChatList(chatIndex);
+            sendImport({ cards: [] });
+        }
+        return;
     }
-    return;
-  }
-  renderChatList(chatIndex);
+    renderChatList(chatIndex);
 };
 
 const saveCurrentChat = async () => {
-  const chatId = getActiveChatId();
-  if (!chatId) return;
-  const exportEl = document.getElementById('chat-export');
-  if (!exportEl || !exportEl.value) return;
-  let payload = null;
-  try { payload = JSON.parse(exportEl.value); } catch (err) { return; }
-  const current = getChatById(chatId);
-  const title = deriveTitle(payload.cards || [], current?.title);
-  const saved = await api.saveChat(chatId, payload, title);
-  if (saved) {
-    const idx = chatIndex.findIndex((c) => c.id === chatId);
-    if (idx !== -1) {
-      chatIndex[idx] = { ...chatIndex[idx], ...saved };
-      renderChatList(chatIndex);
+    const chatId = getActiveChatId();
+    if (!chatId) return;
+    const exportEl = document.getElementById("chat-export");
+    if (!exportEl || !exportEl.value) return;
+    let payload = null;
+    try {
+        payload = JSON.parse(exportEl.value);
+    } catch (err) {
+        return;
     }
-    if (chatId === getActiveChatId()) {
-      setActiveChatTitle(saved.title || title || 'New chat');
+    const current = getChatById(chatId);
+    const title = deriveTitle(payload.cards || [], current?.title);
+    const saved = await api.saveChat(chatId, payload, title);
+    if (saved) {
+        const idx = chatIndex.findIndex((c) => c.id === chatId);
+        if (idx !== -1) {
+            chatIndex[idx] = { ...chatIndex[idx], ...saved };
+            renderChatList(chatIndex);
+        }
+        if (chatId === getActiveChatId()) {
+            setActiveChatTitle(saved.title || title || "New chat");
+        }
     }
-  }
 };
 
 const init = async () => {
-  chatIndex = await api.listChats();
-  if (!chatIndex.length) {
-    const chat = await api.createChat();
-    if (chat) chatIndex = [chat];
-  }
-  const active = chatIndex[0]?.id;
-  if (active) {
-    setActiveChatId(active);
-    const initial = getChatById(active);
-    setActiveChatTitle(initial?.title || 'New chat');
-  }
-  renderChatList(chatIndex);
-  if (active) await selectChat(active);
-  closeSidebar();
+    chatIndex = await api.listChats();
+    if (!chatIndex.length) {
+        const chat = await api.createChat();
+        if (chat) chatIndex = [chat];
+    }
+    const active = chatIndex[0]?.id;
+    if (active) {
+        setActiveChatId(active);
+        const initial = getChatById(active);
+        setActiveChatTitle(initial?.title || "New chat");
+    }
+    renderChatList(chatIndex);
+    if (active) await selectChat(active);
+    closeSidebar();
+    // Ensure scroll to bottom after initial load
+    setTimeout(() => {
+        scrollToBottom();
+    }, 200);
 };
 
-document.getElementById('new-chat-btn')?.addEventListener('click', () => {
-  createChat();
+document.getElementById("new-chat-btn")?.addEventListener("click", () => {
+    createChat();
 });
 
-document.getElementById('sidebar-toggle-btn')?.addEventListener('click', () => {
-  openSidebar();
+document.getElementById("sidebar-toggle-btn")?.addEventListener("click", () => {
+    openSidebar();
 });
 
-document.getElementById('close-sidebar-btn')?.addEventListener('click', () => {
-  closeSidebar();
-});
-
-document.getElementById('sidebar-backdrop')?.addEventListener('click', () => {
-  closeSidebar();
-});
-
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
+document.getElementById("close-sidebar-btn")?.addEventListener("click", () => {
     closeSidebar();
-  }
 });
 
-document.body.addEventListener('htmx:wsAfterMessage', () => {
-  saveCurrentChat();
+document.getElementById("sidebar-backdrop")?.addEventListener("click", () => {
+    closeSidebar();
 });
 
-(document.body).addEventListener('htmx:afterSwap', () => {
-  saveCurrentChat();
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+        closeSidebar();
+    }
 });
 
-document.addEventListener('click', (event) => {
-  const btn = event.target.closest('.copy-chat-btn');
-  if (!btn) return;
-  if (btn.classList.contains('upload-chat-btn')) return;
-  console.log('[chat_app] download override handler fired');
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  const exportInput = document.getElementById('chat-export');
-  const input = exportInput || document.getElementById('chat-data');
-  if (!input) return;
-  const text = input.value || '[]';
-  const blob = new Blob([text], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const rawTitle = getActiveChatTitle();
-  const slug = String(rawTitle)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  link.href = url;
-  link.download = `${slug || 'pylogue-conversation'}-${timestamp}.json`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  btn.dataset.copied = 'true';
-  setTimeout(() => { btn.dataset.copied = 'false'; }, 1200);
+const scrollToBottom = () => {
+    const scrollAnchor = document.getElementById("scroll-anchor");
+    if (scrollAnchor) {
+        scrollAnchor.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+};
+
+document.body.addEventListener("htmx:wsAfterMessage", () => {
+    saveCurrentChat();
+    scrollToBottom();
+});
+
+document.body.addEventListener("htmx:afterSwap", () => {
+    saveCurrentChat();
+    scrollToBottom();
+});
+
+document.addEventListener("click", (event) => {
+    const btn = event.target.closest(".copy-chat-btn");
+    if (!btn) return;
+    if (btn.classList.contains("upload-chat-btn")) return;
+    console.log("[chat_app] download override handler fired");
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const exportInput = document.getElementById("chat-export");
+    const input = exportInput || document.getElementById("chat-data");
+    if (!input) return;
+    const text = input.value || "[]";
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const rawTitle = getActiveChatTitle();
+    const slug = String(rawTitle)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    link.href = url;
+    link.download = `${slug || "pylogue-conversation"}-${timestamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    btn.dataset.copied = "true";
+    setTimeout(() => {
+        btn.dataset.copied = "false";
+    }, 1200);
 });
 
 init();

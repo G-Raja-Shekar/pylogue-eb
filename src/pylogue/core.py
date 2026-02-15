@@ -286,7 +286,7 @@ def render_input():
         name="msg",
         placeholder="Say hi...",
         autofocus=True,
-        rows=3,
+        rows=1,
         cls="uk-textarea w-full bg-white border-slate-300 focus:border-slate-500 focus:ring-2 focus:ring-slate-200 font-mono",
     )
 
@@ -331,14 +331,29 @@ def render_cards(cards):
                 cls="chat-row-block chat-row-assistant",
             )
         )
-    return Div(
+    
+    # Only wrap in chat-panel if there are cards to display
+    panel_content = [
         *rows,
         Div(id="scroll-anchor"),
         Input(type="hidden", id="chat-data", value=data_json),
         Input(type="hidden", id="chat-export", value=json.dumps({"cards": cards})),
-        id="cards",
-        cls="divide-y divide-slate-200",
-    )
+    ]
+    
+    if cards:
+        return Div(
+            Div(
+                *panel_content,
+                cls="divide-y divide-slate-200",
+            ),
+            id="cards",
+            cls="chat-panel",
+        )
+    else:
+        return Div(
+            *panel_content,
+            id="cards",
+        )
 
 
 def render_chat_data(cards):
@@ -737,8 +752,7 @@ def register_routes(
                                 render_input(),
                                 Div(
                                     Button("Send", cls=ButtonT.primary, type="submit", id="chat-send-btn"),
-                                    P("Cmd/Ctrl+Enter to send", cls="text-xs text-slate-400"),
-                                    cls="flex flex-col gap-2 items-stretch",
+                                    cls="flex items-center",
                                 ),
                                 id="form",
                                 hx_ext="ws",
