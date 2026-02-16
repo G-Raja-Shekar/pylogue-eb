@@ -1,7 +1,13 @@
+/* Fonts for the entire application */
+*{
+  font-family: 'Martel Sans', ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+}
+
 html, body {
   margin: 0;
   background: #f8fafc;
   color: #0f172a;
+  font-family: 'Martel Sans', ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
 }
 
 html {
