@@ -282,6 +282,22 @@ html {
   padding-left: 1.25rem;
 }
 
+.marked ul {
+  list-style: disc;
+}
+
+.marked ol {
+  list-style: decimal;
+}
+
+.marked li {
+  display: list-item;
+}
+
+.marked li::marker {
+  color: currentColor;
+}
+
 .marked hr {
   border: 0;
   border-top: 1px solid #e2e8f0;
