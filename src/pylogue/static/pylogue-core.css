@@ -46,6 +46,20 @@ html {
   padding: 14px 12px;
 }
 
+/* Only apply flex reordering when .tool-html is present */
+.chat-row-assistant .marked:has(.tool-html) {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-row-assistant .marked:has(.tool-html) .tool-html {
+  order: 2;
+}
+
+.chat-row-assistant .marked:has(.tool-html) p {
+  order: 1;
+}
+
 .tool-status {
   display: block;
   width: fit-content;
@@ -61,7 +75,7 @@ html {
 
 .tool-status--running {
   position: relative;
-  overflow: hidden;
+  /* overflow: hidden; */
   color: #0f172a;
 }
 
@@ -154,7 +168,7 @@ html {
 }
 
 .marked {
-  font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: 'Martel Sans', ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
 }
 
 .marked :not(pre) > code {
