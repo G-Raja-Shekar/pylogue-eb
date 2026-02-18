@@ -244,10 +244,6 @@ const selectChat = async (chatId) => {
     renderChatList(chatIndex);
     const payload = await api.getChat(chatId);
     sendImport(payload);
-    // Allow time for htmx to swap content before scrolling
-    setTimeout(() => {
-        scrollToBottom();
-    }, 100);
     if (isMobile()) closeSidebar();
 };
 
@@ -259,9 +255,6 @@ const createChat = async () => {
     setActiveChatTitle(chat.title || "New chat");
     renderChatList(chatIndex);
     sendImport({ cards: [] });
-    setTimeout(() => {
-        scrollToBottom();
-    }, 100);
     if (isMobile()) closeSidebar();
 };
 
@@ -329,10 +322,6 @@ const init = async () => {
     renderChatList(chatIndex);
     if (active) await selectChat(active);
     closeSidebar();
-    // Ensure scroll to bottom after initial load
-    setTimeout(() => {
-        scrollToBottom();
-    }, 200);
 };
 
 document.getElementById("new-chat-btn")?.addEventListener("click", () => {
@@ -382,14 +371,29 @@ const scrollToBottom = () => {
     }
 };
 
+// Track if user just submitted a question
+let userSubmittedQuestion = false;
+
+// Listen for form submission (when user asks a question)
+document.getElementById("form")?.addEventListener("submit", () => {
+    userSubmittedQuestion = true;
+});
+
 document.body.addEventListener("htmx:wsAfterMessage", () => {
     saveCurrentChat();
-    scrollToBottom();
+    // Only scroll if user just submitted a question
+    if (userSubmittedQuestion) {
+        scrollToBottom();
+        userSubmittedQuestion = false;
+    }
 });
 
 document.body.addEventListener("htmx:afterSwap", () => {
     saveCurrentChat();
-    scrollToBottom();
+    // Only scroll on initial swap after user question
+    if (userSubmittedQuestion) {
+        scrollToBottom();
+    }
 });
 
 document.addEventListener("click", (event) => {
